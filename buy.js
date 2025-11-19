@@ -179,8 +179,8 @@ function processRaydiumPool(id, poolState) {
             }
         }
         catch (error) {
-            console.log(`Error in getting new pool balance, ${error}`);
             incErrors();
+            console.log(`Error in getting new pool balance, ${error}`);
         }
         if (constants_1.CHECK_IF_MINT_IS_RENOUNCED) {
             const mintOption = yield checkMintable(poolState.baseMint);
@@ -405,6 +405,16 @@ const runListener = () => __awaiter(void 0, void 0, void 0, function* () {
         const existing = existingLiquidityPools.has(key);
         if (poolOpenTime > runTimestamp && !existing) {
             existingLiquidityPools.add(key);
+
+            // Update metrics – we saw a NEW Raydium pool
+            incPoolsChecked();
+            recordPool({
+                address: updatedAccountInfo.accountId.toString(),
+                // If you have a variable that already holds pool size in USDC,
+                // replace `null` with that variable name.
+                sizeUSDC: null,
+            });
+
             const _ = processRaydiumPool(updatedAccountInfo.accountId, poolState);
             poolId = updatedAccountInfo.accountId;
         }
@@ -500,8 +510,8 @@ yield (0, legacy_1.execute)(transaction, latestBlockhash);
         }
     }
     catch (error) {
-        console.log("Error unwrapping WSOL");
         incErrors();
+        console.log("Error unwrapping WSOL");
     }
 });
 const inputAction = (accountId, mint, amount) => __awaiter(void 0, void 0, void 0, function* () {
@@ -590,8 +600,8 @@ const priceMatch = (amountIn, poolKeys) => __awaiter(void 0, void 0, void 0, fun
         } while (timesChecked < timesToCheck);
     }
     catch (error) {
-        console.log("Error when setting profit amounts", error);
         incErrors();
+        console.log("Error when setting profit amounts", error);
     }
 });
 const sleep = (ms) => __awaiter(void 0, void 0, void 0, function* () {
@@ -678,8 +688,8 @@ function trackWallet(connection) {
             }), "confirmed");
         }
         catch (error) {
-            console.log("Transaction error : ", error);
             incErrors();
+            console.log("Transaction error : ", error);
         }
     });
 }
@@ -723,8 +733,8 @@ const getPrice = () => __awaiter(void 0, void 0, void 0, function* () {
         };
     }
     catch (e) {
-        console.log("error in fetching price of pool", e);
         incErrors();
+        console.log("error in fetching price of pool", e);
         return;
     }
 });
