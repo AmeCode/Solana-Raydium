@@ -51,6 +51,7 @@ const constants_1 = require("./constants");
 const bn_js_1 = require("bn.js");
 const tokenFilter_1 = require("./tokenFilter");
 const legacy_1 = require("./executor/legacy");
+const { incPoolsChecked, recordPool, recordTrade, incErrors, getMetrics } = require("./metrics");
 const solanaConnection = new web3_js_1.Connection(constants_1.RPC_ENDPOINT, {
     wsEndpoint: constants_1.RPC_WEBSOCKET_ENDPOINT,
 });
@@ -148,6 +149,11 @@ function processRaydiumPool(id, poolState) {
         idDealt = id.toBase58();
         try {
             const quoteBalance = (yield solanaConnection.getBalance(poolState.quoteVault, "processed")) / 10 ** 9;
+            incPoolsChecked();
+            recordPool({
+                address: id === null || id === void 0 ? void 0 : id.toString(),
+                sizeUSDC: quoteBalance,
+            });
             if (!shouldBuy(poolState.baseMint.toString())) {
                 return;
             }
@@ -174,6 +180,7 @@ function processRaydiumPool(id, poolState) {
         }
         catch (error) {
             console.log(`Error in getting new pool balance, ${error}`);
+            incErrors();
         }
         if (constants_1.CHECK_IF_MINT_IS_RENOUNCED) {
             const mintOption = yield checkMintable(poolState.baseMint);
@@ -221,6 +228,7 @@ function checkMintable(vault) {
         catch (e) {
             utils_1.logger.debug(e);
             console.log(`Failed to check if mint is renounced`, vault);
+            incErrors();
         }
     });
 }
@@ -239,6 +247,7 @@ function processOpenBookMarket(updatedAccountInfo) {
         catch (e) {
             utils_1.logger.debug(e);
             console.log(`Failed to process market, mint: `, accountData === null || accountData === void 0 ? void 0 : accountData.baseMint);
+            incErrors();
         }
     });
 }
@@ -299,6 +308,7 @@ function buy(accountId, accountData) {
         catch (e) {
             utils_1.logger.debug(e);
             console.log(`Failed to buy token, ${accountData.baseMint}`);
+            incErrors();
         }
     });
 }
@@ -342,14 +352,23 @@ function sell(mint_1, amount_1) {
                     (0, spl_token_1.createCloseAccountInstruction)(quoteTokenAssociatedAddress, wallet.publicKey, wallet.publicKey),
                 ],
             }).compileToV0Message();
-		const transaction = new web3_js_1.VersionedTransaction(messageV0);
+                const transaction = new web3_js_1.VersionedTransaction(messageV0);
 transaction.sign([wallet, ...innerTransaction.signers]);
 yield (0, legacy_1.execute)(transaction, latestBlockhash);
+
+            if (!isTp1Sell) {
+                recordTrade({
+                    side: "sell",
+                    sizeUSDC: Number(constants_1.QUOTE_AMOUNT),
+                    pnlUSDC: 0,
+                });
+            }
 
         }
         catch (e) {
             yield sleep(1000);
             utils_1.logger.debug(e);
+            incErrors();
         }
         if (!isTp1Sell) {
             yield sell(mint, amount, true);
@@ -482,6 +501,7 @@ yield (0, legacy_1.execute)(transaction, latestBlockhash);
     }
     catch (error) {
         console.log("Error unwrapping WSOL");
+        incErrors();
     }
 });
 const inputAction = (accountId, mint, amount) => __awaiter(void 0, void 0, void 0, function* () {
@@ -571,6 +591,7 @@ const priceMatch = (amountIn, poolKeys) => __awaiter(void 0, void 0, void 0, fun
     }
     catch (error) {
         console.log("Error when setting profit amounts", error);
+        incErrors();
     }
 });
 const sleep = (ms) => __awaiter(void 0, void 0, void 0, function* () {
@@ -597,6 +618,11 @@ const walletChange = (updatedAccountInfo) => __awaiter(void 0, void 0, void 0, f
                 console.log(`Detected a new pool, but didn't confirm buy action`);
                 return;
             }
+            recordTrade({
+                side: "buy",
+                sizeUSDC: Number(constants_1.QUOTE_AMOUNT),
+                pnlUSDC: 0,
+            });
             const tokenIn = new raydium_sdk_1.Token(spl_token_1.TOKEN_PROGRAM_ID, tokenAccountInCommon.poolKeys.baseMint, tokenAccountInCommon.poolKeys.baseDecimals);
             const tokenAmountIn = new raydium_sdk_1.TokenAmount(tokenIn, tokenBalance, true);
             inputAction(updatedAccountInfo.accountId, accountData.mint, tokenBalance);
@@ -653,6 +679,7 @@ function trackWallet(connection) {
         }
         catch (error) {
             console.log("Transaction error : ", error);
+            incErrors();
         }
     });
 }
@@ -697,6 +724,7 @@ const getPrice = () => __awaiter(void 0, void 0, void 0, function* () {
     }
     catch (e) {
         console.log("error in fetching price of pool", e);
+        incErrors();
         return;
     }
 });
