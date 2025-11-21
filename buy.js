@@ -52,6 +52,7 @@ const bn_js_1 = require("bn.js");
 const tokenFilter_1 = require("./tokenFilter");
 const legacy_1 = require("./executor/legacy");
 const { incPoolsChecked, recordPool, recordTrade, incErrors, getMetrics } = require("./metrics");
+const DEBUG_DIAGNOSTICS = process.env.DEBUG_DIAGNOSTICS === "true";
 const solanaConnection = new web3_js_1.Connection(constants_1.RPC_ENDPOINT, {
     wsEndpoint: constants_1.RPC_WEBSOCKET_ENDPOINT,
 });
@@ -157,7 +158,38 @@ function processRaydiumPool(id, poolState) {
             if (!shouldBuy(poolState.baseMint.toString())) {
                 return;
             }
-            console.log(`Detected a new pool: https://dexscreener.com/solana/${id.toString()}`);
+            const poolAddress = id.toString();
+            console.log(`Detected a new pool: https://dexscreener.com/solana/${poolAddress}`);
+
+            // Update dashboard metrics when a new pool is detected
+            if (typeof incPoolsChecked === "function") {
+                try {
+                    incPoolsChecked();
+
+                    if (typeof recordPool === "function") {
+                        const addrString =
+                            typeof poolAddress === "string"
+                                ? poolAddress
+                                : (poolAddress && poolAddress.toBase58
+                                    ? poolAddress.toBase58()
+                                    : String(poolAddress));
+
+                        recordPool({
+                            address: addrString,
+                            sizeUSDC: null,
+                        });
+                    }
+
+                    if (DEBUG_DIAGNOSTICS) {
+                        console.log("[METRICS] New pool counted for dashboard");
+                    }
+                }
+                catch (e) {
+                    if (DEBUG_DIAGNOSTICS) {
+                        console.log("[METRICS ERROR] Failed to update metrics for new pool:", e);
+                    }
+                }
+            }
             if (!quoteMinPoolSizeAmount.isZero()) {
                 console.log(`Processing pool: ${id.toString()} with ${quoteBalance.toFixed(2)} ${quoteToken.symbol} in liquidity`);
                 // if (poolSize.lt(quoteMinPoolSizeAmount)) {
@@ -399,6 +431,13 @@ const runListener = () => __awaiter(void 0, void 0, void 0, function* () {
     trackWallet(solanaConnection);
     const runTimestamp = Math.floor(new Date().getTime() / 1000);
     const raydiumSubscriptionId = solanaConnection.onProgramAccountChange(liquidity_1.RAYDIUM_LIQUIDITY_PROGRAM_ID_V4, (updatedAccountInfo) => __awaiter(void 0, void 0, void 0, function* () {
+        if (DEBUG_DIAGNOSTICS) {
+            console.log(
+                "🔥 Raydium WS event",
+                "account:",
+                updatedAccountInfo.accountId.toBase58()
+            );
+        }
         const key = updatedAccountInfo.accountId.toString();
         const poolState = raydium_sdk_1.LIQUIDITY_STATE_LAYOUT_V4.decode(updatedAccountInfo.accountInfo.data);
         const poolOpenTime = parseInt(poolState.poolOpenTime.toString());
